@@ -1,8 +1,8 @@
 # MiniCross
 
-Windows 外置准星。36 KB，零依赖，常驻内存 0.5 MB。
+Windows 外置准星。44 KB，零依赖，常驻内存 0.5 MB。
 
-A 36 KB crosshair overlay for Windows. No runtime, no installer, no Electron.
+A 44 KB crosshair overlay for Windows. No runtime, no installer, no Electron.
 
 ![screenshot](docs/screenshot.png)
 
@@ -12,10 +12,10 @@ A 36 KB crosshair overlay for Windows. No runtime, no installer, no Electron.
 
 | | MiniCross | crosshair-y (Electron) | CrosshairOverlay (.NET) |
 |---|---|---|---|
-| 下载包 | **36 KB** | 135.65 MB | 47.66 MB |
+| 下载包 | **44 KB** | 135.65 MB | 47.66 MB |
 | 进程数 | **1** | **5** | — |
 | 私有内存 | **1.5 MB** | **250 MB** | — |
-| 工作集 | **0.2–0.6 MB** | **449.8 MB** | — |
+| 工作集（面板关闭） | **0.2–0.6 MB** | **449.8 MB** | — |
 | 空闲 CPU | 0 ms / 10 s | — | — |
 
 怎么测的：
@@ -69,6 +69,16 @@ A 36 KB crosshair overlay for Windows. No runtime, no installer, no Electron.
 | F10 | 切到下一个方案 |
 | Ctrl+Alt+方向键 | 挪位置（只在本次运行有效，不写回文件） |
 | Ctrl+Alt+Q | 退出 |
+
+## 设置面板
+
+按 `Ctrl+Alt+E` 打开原生设置面板。
+
+左边下拉选图层（Cross / Diagonal / Dot / Circle / Bracket / Image / General），中间是参数控件，右边是实时预览。拖滑块，屏幕上的准星当场就变，不用保存。
+
+点 `Save` 写回 `config.ini`（自动备份为 `config.ini.bak`），`Reset` 丢弃改动重新读文件。
+
+面板是 Win32 原生控件，不是网页套壳：没有 WebView2、没有 Chromium、没有额外进程。
 
 ## 配置
 
@@ -151,7 +161,7 @@ crosshair-y 免费，但装完 135 MB。Crosshair X 卖 ¥42，跑起来是 Elec
 
 我只是需要屏幕中间有个十字。
 
-前身是 .NET 版，常驻 13 MB。重写成 C 之后 1.5 MB，exe 从 81 KB 变成 36 KB。
+前身是 .NET 版，常驻 13 MB。重写成 C 之后 1.5 MB，exe 从 81 KB 变成 44 KB（其中 8 KB 是原生设置面板）。
 
 ## License
 

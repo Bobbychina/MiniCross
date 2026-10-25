@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <math.h>
+#include <commctrl.h>
+#include <commdlg.h>
 
 #ifndef WDA_EXCLUDEFROMCAPTURE
 #define WDA_EXCLUDEFROMCAPTURE 0x00000011
@@ -852,6 +854,356 @@ static void next_profile(void) {
     apply();
 }
 
+// ================= 配置面板（原生 Win32，零依赖） =================
+#define PANEL_CLASS "MiniCrossPanel"
+#define ID_GROUP 2001
+#define ID_SAVE  2002
+#define ID_RESET 2003
+#define ID_CLOSE 2004
+#define ID_CTL   2100
+
+typedef struct { const char *label; int *pval; int lo, hi; char kind; } PARAM;
+typedef struct { const char *name; PARAM items[10]; int n; } PGROUP;
+
+static PGROUP g_groups[8];
+static int    g_ngroups = 0;
+static HWND   g_panel, g_group_cb;
+static HWND   g_ctl[10], g_lbl[10], g_val[10];
+static int    g_cur_group = 0;
+static HINSTANCE g_hi;
+
+#define ADDP(g, lbl, fld, mn, mx, kd) do { \
+    (g)->items[(g)->n].label = (lbl); (g)->items[(g)->n].pval = &(fld); \
+    (g)->items[(g)->n].lo = (mn); (g)->items[(g)->n].hi = (mx); \
+    (g)->items[(g)->n].kind = (kd); (g)->n++; } while (0)
+
+static void init_groups(void) {
+    if (g_ngroups) return;
+    int i = 0;
+    g_groups[i].name = "Cross"; g_groups[i].n = 0;
+    ADDP(&g_groups[i], "Enabled",  g_cfg.cross.b.enabled, 0, 1, 'b');
+    ADDP(&g_groups[i], "Length",   g_cfg.cross.length, 0, 60, 'i');
+    ADDP(&g_groups[i], "Thickness",g_cfg.cross.thickness, 1, 10, 'i');
+    ADDP(&g_groups[i], "Gap",      g_cfg.cross.gap, 0, 40, 'i');
+    ADDP(&g_groups[i], "Color",    g_cfg.cross.b.color, 0, 0, 'c');
+    ADDP(&g_groups[i], "Alpha",    g_cfg.cross.b.alpha, 0, 255, 'i');
+    ADDP(&g_groups[i], "Outline",  g_cfg.cross.b.outline, 0, 4, 'i');
+    ADDP(&g_groups[i], "OL Color", g_cfg.cross.b.outline_color, 0, 0, 'c');
+    i++;
+    g_groups[i].name = "Diagonal"; g_groups[i].n = 0;
+    ADDP(&g_groups[i], "Enabled",  g_cfg.diag.b.enabled, 0, 1, 'b');
+    ADDP(&g_groups[i], "Length",   g_cfg.diag.length, 0, 60, 'i');
+    ADDP(&g_groups[i], "Thickness",g_cfg.diag.thickness, 1, 10, 'i');
+    ADDP(&g_groups[i], "Gap",      g_cfg.diag.gap, 0, 40, 'i');
+    ADDP(&g_groups[i], "Angle",    g_cfg.diag.angle, 0, 90, 'i');
+    ADDP(&g_groups[i], "Color",    g_cfg.diag.b.color, 0, 0, 'c');
+    ADDP(&g_groups[i], "Alpha",    g_cfg.diag.b.alpha, 0, 255, 'i');
+    i++;
+    g_groups[i].name = "Dot"; g_groups[i].n = 0;
+    ADDP(&g_groups[i], "Enabled",  g_cfg.dot.b.enabled, 0, 1, 'b');
+    ADDP(&g_groups[i], "Diameter", g_cfg.dot.size, 0, 20, 'i');
+    ADDP(&g_groups[i], "Color",    g_cfg.dot.b.color, 0, 0, 'c');
+    ADDP(&g_groups[i], "Alpha",    g_cfg.dot.b.alpha, 0, 255, 'i');
+    ADDP(&g_groups[i], "Outline",  g_cfg.dot.b.outline, 0, 4, 'i');
+    i++;
+    g_groups[i].name = "Circle"; g_groups[i].n = 0;
+    ADDP(&g_groups[i], "Enabled",  g_cfg.circle.b.enabled, 0, 1, 'b');
+    ADDP(&g_groups[i], "Radius",   g_cfg.circle.radius, 0, 120, 'i');
+    ADDP(&g_groups[i], "Thickness",g_cfg.circle.thickness, 1, 10, 'i');
+    ADDP(&g_groups[i], "Color",    g_cfg.circle.b.color, 0, 0, 'c');
+    ADDP(&g_groups[i], "Alpha",    g_cfg.circle.b.alpha, 0, 255, 'i');
+    i++;
+    g_groups[i].name = "Bracket"; g_groups[i].n = 0;
+    ADDP(&g_groups[i], "Enabled",  g_cfg.bracket.b.enabled, 0, 1, 'b');
+    ADDP(&g_groups[i], "Distance", g_cfg.bracket.size, 0, 120, 'i');
+    ADDP(&g_groups[i], "Arm",      g_cfg.bracket.length, 0, 60, 'i');
+    ADDP(&g_groups[i], "Thickness",g_cfg.bracket.thickness, 1, 10, 'i');
+    ADDP(&g_groups[i], "Color",    g_cfg.bracket.b.color, 0, 0, 'c');
+    ADDP(&g_groups[i], "Alpha",    g_cfg.bracket.b.alpha, 0, 255, 'i');
+    i++;
+    g_groups[i].name = "Image"; g_groups[i].n = 0;
+    ADDP(&g_groups[i], "Enabled",  g_cfg.image.b.enabled, 0, 1, 'b');
+    ADDP(&g_groups[i], "Size",     g_cfg.image.size, 1, 256, 'i');
+    ADDP(&g_groups[i], "Angle",    g_cfg.image.angle, -180, 180, 'i');
+    ADDP(&g_groups[i], "Alpha",    g_cfg.image.b.alpha, 0, 255, 'i');
+    i++;
+    g_groups[i].name = "General"; g_groups[i].n = 0;
+    ADDP(&g_groups[i], "Offset X", g_cfg.offset_x, -400, 400, 'i');
+    ADDP(&g_groups[i], "Offset Y", g_cfg.offset_y, -400, 400, 'i');
+    ADDP(&g_groups[i], "Hide in cap", g_cfg.hide_from_capture, 0, 1, 'b');
+    ADDP(&g_groups[i], "Keep on top", g_cfg.keep_on_top, 0, 1, 'b');
+    i++;
+    g_ngroups = i;
+}
+
+static void pick_color(PARAM *p) {
+    CHOOSECOLORA cc;
+    ZeroMemory(&cc, sizeof(cc));
+    cc.lStructSize = sizeof(cc);
+    cc.hwndOwner = g_panel;
+    cc.rgbResult = RGB((*p->pval >> 16) & 255, (*p->pval >> 8) & 255, *p->pval & 255);
+    cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+    if (ChooseColorA(&cc)) {
+        int a = (*p->pval >> 24) & 255;
+        if (a == 0) a = 255;
+        *p->pval = (a << 24) | (GetRValue(cc.rgbResult) << 16) |
+                   (GetGValue(cc.rgbResult) << 8) | GetBValue(cc.rgbResult);
+    }
+}
+
+static void save_ini(void) {
+    char bak[MAX_PATH];
+    lstrcpynA(bak, g_ini_path, MAX_PATH);
+    lstrcatA(bak, ".bak");
+    CopyFileA(g_ini_path, bak, FALSE);
+
+    DWORD len = 0;
+    char *src = read_file(g_ini_path, &len);
+    char *prof = NULL;
+    if (src) {
+        char *p = src;
+        while (p && *p) {
+            if ((p == src || p[-1] == '\n') && !_strnicmp(p, "[profile:", 9)) { prof = p; break; }
+            p = strchr(p, '\n');
+            if (p) p++;
+        }
+    }
+
+    FILE *f = fopen(g_ini_path, "wb");
+    if (!f) { if (src) free(src); return; }
+
+    fprintf(f, "; saved by MiniCross panel, backup at config.ini.bak\r\n\r\n");
+    fprintf(f, "[general]\r\n");
+    fprintf(f, "profile = %s\r\n", g_cfg.profile);
+    fprintf(f, "monitor = %d\r\n", g_cfg.monitor);
+    fprintf(f, "x_percent = %.2f\r\n", g_cfg.x_percent);
+    fprintf(f, "y_percent = %.2f\r\n", g_cfg.y_percent);
+    fprintf(f, "offset_x = %d\r\n", g_cfg.offset_x);
+    fprintf(f, "offset_y = %d\r\n", g_cfg.offset_y);
+    fprintf(f, "scale = %.2f\r\n", g_cfg.scale);
+    fprintf(f, "rotation = %.1f\r\n", g_cfg.rotation);
+    fprintf(f, "nudge_step = %d\r\n", g_cfg.nudge_step);
+    fprintf(f, "hide_from_capture = %d\r\n", g_cfg.hide_from_capture);
+    fprintf(f, "antialias = %d\r\n", g_cfg.antialias);
+    fprintf(f, "auto_reload = %d\r\n", g_cfg.auto_reload);
+    fprintf(f, "keep_on_top = %d\r\n", g_cfg.keep_on_top);
+    fprintf(f, "topmost_check_ms = %d\r\n", g_cfg.topmost_check_ms);
+    fprintf(f, "trim_memory = %d\r\n", g_cfg.trim_memory);
+    fprintf(f, "trim_active_ms = %d\r\n", g_cfg.trim_active_ms);
+    fprintf(f, "trim_window_ms = %d\r\n", g_cfg.trim_window_ms);
+    fprintf(f, "trim_idle_ms = %d\r\n", g_cfg.trim_idle_ms);
+    fprintf(f, "\r\n[hotkeys]\r\n");
+    fprintf(f, "toggle = %s\r\n", g_cfg.toggle_key);
+    fprintf(f, "open_ui = %s\r\n", g_cfg.open_ui_key);
+    fprintf(f, "reload = %s\r\n", g_cfg.reload_key);
+    fprintf(f, "next_profile = %s\r\n", g_cfg.next_profile_key);
+    fprintf(f, "quit = %s\r\n", g_cfg.quit_key);
+
+#define SAVE_LB(sec, st) \
+    fprintf(f, "\r\n[%s]\r\n", sec); \
+    fprintf(f, "enabled = %d\r\ncolor = #%06X\r\nalpha = %d\r\noutline = %d\r\n" \
+               "outline_color = #%06X\r\noutline_alpha = %d\r\n", \
+            st.b.enabled, st.b.color & 0xFFFFFF, st.b.alpha, st.b.outline, \
+            st.b.outline_color & 0xFFFFFF, st.b.outline_alpha)
+
+    SAVE_LB("cross", g_cfg.cross);
+    fprintf(f, "length = %d\r\nthickness = %d\r\ngap = %d\r\narms = %d%d%d%d\r\n",
+            g_cfg.cross.length, g_cfg.cross.thickness, g_cfg.cross.gap,
+            !!(g_cfg.cross.arms & 1), !!(g_cfg.cross.arms & 2),
+            !!(g_cfg.cross.arms & 4), !!(g_cfg.cross.arms & 8));
+
+    SAVE_LB("diagonal", g_cfg.diag);
+    fprintf(f, "length = %d\r\nthickness = %d\r\ngap = %d\r\nangle = %d\r\n",
+            g_cfg.diag.length, g_cfg.diag.thickness, g_cfg.diag.gap, g_cfg.diag.angle);
+
+    SAVE_LB("dot", g_cfg.dot);
+    fprintf(f, "size = %d\r\n", g_cfg.dot.size);
+
+    SAVE_LB("circle", g_cfg.circle);
+    fprintf(f, "radius = %d\r\nthickness = %d\r\n", g_cfg.circle.radius, g_cfg.circle.thickness);
+
+    SAVE_LB("bracket", g_cfg.bracket);
+    fprintf(f, "size = %d\r\nlength = %d\r\nthickness = %d\r\n",
+            g_cfg.bracket.size, g_cfg.bracket.length, g_cfg.bracket.thickness);
+
+    fprintf(f, "\r\n[image]\r\nenabled = %d\r\npath = %s\r\nsize = %d\r\nangle = %d\r\nalpha = %d\r\n",
+            g_cfg.image.b.enabled, g_cfg.image.path, g_cfg.image.size,
+            g_cfg.image.angle, g_cfg.image.b.alpha);
+
+    if (prof) { fprintf(f, "\r\n%s", prof); }
+    fclose(f);
+    if (src) free(src);
+}
+
+static void panel_build_controls(void);
+static LRESULT CALLBACK panel_proc(HWND h, UINT m, WPARAM w, LPARAM l);
+
+static void panel_build_controls(void) {
+    for (int i = 0; i < 10; i++) {
+        if (g_ctl[i]) { DestroyWindow(g_ctl[i]); g_ctl[i] = NULL; }
+        if (g_lbl[i]) { DestroyWindow(g_lbl[i]); g_lbl[i] = NULL; }
+        if (g_val[i]) { DestroyWindow(g_val[i]); g_val[i] = NULL; }
+    }
+    PGROUP *g = &g_groups[g_cur_group];
+    for (int i = 0; i < g->n; i++) {
+        PARAM *p = &g->items[i];
+        int y = 52 + i * 40;
+        g_lbl[i] = CreateWindowExA(0, "STATIC", p->label, WS_CHILD | WS_VISIBLE,
+                                   16, y + 6, 110, 20, g_panel, NULL, g_hi, NULL);
+        if (p->kind == 'b') {
+            g_ctl[i] = CreateWindowExA(0, "BUTTON", "", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                                       134, y, 60, 28, g_panel, (HMENU)(INT_PTR)(ID_CTL + i), g_hi, NULL);
+            SendMessageA(g_ctl[i], BM_SETCHECK, *p->pval ? BST_CHECKED : BST_UNCHECKED, 0);
+        } else if (p->kind == 'c') {
+            g_ctl[i] = CreateWindowExA(0, "BUTTON", "", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                                       134, y, 120, 28, g_panel, (HMENU)(INT_PTR)(ID_CTL + i), g_hi, NULL);
+            char buf[16]; wsprintfA(buf, "#%06X", (*p->pval) & 0xFFFFFF);
+            SetWindowTextA(g_ctl[i], buf);
+        } else {
+            g_ctl[i] = CreateWindowExA(0, TRACKBAR_CLASS, "", WS_CHILD | WS_VISIBLE | TBS_HORZ,
+                                       134, y + 4, 160, 24, g_panel, (HMENU)(INT_PTR)(ID_CTL + i), g_hi, NULL);
+            SendMessageA(g_ctl[i], TBM_SETRANGE, TRUE, MAKELPARAM((short)p->lo, (short)p->hi));
+            SendMessageA(g_ctl[i], TBM_SETPOS, TRUE, *p->pval);
+            char buf[32]; wsprintfA(buf, "%d", *p->pval);
+            g_val[i] = CreateWindowExA(0, "STATIC", buf, WS_CHILD | WS_VISIBLE,
+                                       300, y + 6, 50, 20, g_panel, NULL, g_hi, NULL);
+        }
+    }
+    HFONT fnt = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    for (int i = 0; i < g->n; i++) {
+        if (g_lbl[i]) SendMessageA(g_lbl[i], WM_SETFONT, (WPARAM)fnt, TRUE);
+        if (g_ctl[i]) SendMessageA(g_ctl[i], WM_SETFONT, (WPARAM)fnt, TRUE);
+        if (g_val[i]) SendMessageA(g_val[i], WM_SETFONT, (WPARAM)fnt, TRUE);
+    }
+}
+
+static LRESULT CALLBACK panel_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+    case WM_COMMAND: {
+        int id = LOWORD(w);
+        if (id == ID_GROUP && HIWORD(w) == CBN_SELCHANGE) {
+            g_cur_group = (int)SendMessageA(g_group_cb, CB_GETCURSEL, 0, 0);
+            panel_build_controls();
+            InvalidateRect(h, NULL, FALSE);
+        } else if (id == ID_SAVE) {
+            save_ini();
+            MessageBoxA(h, "Saved. The overlay reloads within 2 seconds.", "MiniCross",
+                        MB_OK | MB_ICONINFORMATION);
+        } else if (id == ID_RESET) {
+            cfg_load(g_ini_path);
+            panel_build_controls();
+            render();
+            InvalidateRect(h, NULL, FALSE);
+        } else if (id == ID_CLOSE) {
+            ShowWindow(h, SW_HIDE);
+        } else if (id >= ID_CTL && id < ID_CTL + 10) {
+            int idx = id - ID_CTL;
+            if (idx < g_groups[g_cur_group].n) {
+                PARAM *p = &g_groups[g_cur_group].items[idx];
+                if (p->kind == 'b') {
+                    *p->pval = SendMessageA(g_ctl[idx], BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0;
+                    render(); InvalidateRect(h, NULL, FALSE);
+                } else if (p->kind == 'c') {
+                    pick_color(p);
+                    char buf[16]; wsprintfA(buf, "#%06X", (*p->pval) & 0xFFFFFF);
+                    SetWindowTextA(g_ctl[idx], buf);
+                    render(); InvalidateRect(h, NULL, FALSE);
+                }
+            }
+        }
+        return 0;
+    }
+    case WM_HSCROLL: {
+        HWND c = (HWND)l;
+        int id = GetDlgCtrlID(c) - ID_CTL;
+        if (id >= 0 && id < g_groups[g_cur_group].n) {
+            PARAM *p = &g_groups[g_cur_group].items[id];
+            int v = (int)SendMessageA(c, TBM_GETPOS, 0, 0);
+            *p->pval = v;
+            if (g_val[id]) { char buf[32]; wsprintfA(buf, "%d", v); SetWindowTextA(g_val[id], buf); }
+            render();
+            InvalidateRect(h, NULL, FALSE);
+        }
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(h, &ps);
+        RECT cr; GetClientRect(h, &cr);
+        HBRUSH bg = CreateSolidBrush(RGB(28, 30, 34));
+        FillRect(dc, &cr, bg);
+        DeleteObject(bg);
+        RECT r = {400, 52, cr.right - 12, cr.bottom - 130};
+        if (r.right < 500) r.right = 500;
+        HBRUSH br = CreateSolidBrush(RGB(18, 20, 24));
+        FillRect(dc, &r, br);
+        DeleteObject(br);
+        if (g_bits && g_w > 0 && g_memdc) {
+            int maxw = 330, maxh = 330;
+            double sc = (double)maxw / (g_w > g_h ? g_w : g_h);
+            int dw = (int)(g_w * sc), dh = (int)(g_h * sc);
+            if (dw < 4) dw = 4;
+            if (dh < 4) dh = 4;
+            int dx = r.left + (r.right - r.left - dw) / 2;
+            int dy = r.top + (r.bottom - r.top - dh) / 2;
+            BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+            SetStretchBltMode(dc, HALFTONE);
+            AlphaBlend(dc, dx, dy, dw, dh, g_memdc, 0, 0, g_w, g_h, bf);
+        }
+        EndPaint(h, &ps);
+        return 0;
+    }
+    case WM_CLOSE:
+        ShowWindow(h, SW_HIDE);
+        return 0;
+    case WM_ERASEBKGND:
+        return 1;
+    }
+    return DefWindowProcA(h, m, w, l);
+}
+
+static void panel_create(void) {
+    init_groups();
+    WNDCLASSA wc;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.lpfnWndProc = panel_proc;
+    wc.hInstance = g_hi;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = CreateSolidBrush(RGB(28, 30, 34));
+    wc.lpszClassName = PANEL_CLASS;
+    RegisterClassA(&wc);
+
+    g_panel = CreateWindowExA(WS_EX_TOOLWINDOW, PANEL_CLASS, "MiniCross Settings",
+                              WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+                              CW_USEDEFAULT, CW_USEDEFAULT, 780, 620, NULL, NULL, g_hi, NULL);
+
+    g_group_cb = CreateWindowExA(0, "COMBOBOX", "",
+                                 WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+                                 16, 12, 260, 240, g_panel, (HMENU)ID_GROUP, g_hi, NULL);
+    for (int i = 0; i < g_ngroups; i++)
+        SendMessageA(g_group_cb, CB_ADDSTRING, 0, (LPARAM)g_groups[i].name);
+    SendMessageA(g_group_cb, CB_SETCURSEL, 0, 0);
+
+    CreateWindowExA(0, "BUTTON", "Save",   WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                    16, 520, 90, 32, g_panel, (HMENU)ID_SAVE, g_hi, NULL);
+    CreateWindowExA(0, "BUTTON", "Reset",  WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                    116, 520, 90, 32, g_panel, (HMENU)ID_RESET, g_hi, NULL);
+    CreateWindowExA(0, "BUTTON", "Close",  WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                    216, 520, 90, 32, g_panel, (HMENU)ID_CLOSE, g_hi, NULL);
+
+    g_cur_group = 0;
+}
+
+static void toggle_panel(void) {
+    if (!g_panel) panel_create();
+    if (IsWindowVisible(g_panel)) { ShowWindow(g_panel, SW_HIDE); return; }
+    render();
+    panel_build_controls();
+    ShowWindow(g_panel, SW_SHOW);
+    SetForegroundWindow(g_panel);
+    InvalidateRect(g_panel, NULL, FALSE);
+}
+
 static LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_HOTKEY:
@@ -864,13 +1216,7 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         case 6: g_nudge_y += g_cfg.nudge_step; apply(); break;
         case 7: g_nudge_x -= g_cfg.nudge_step; apply(); break;
         case 8: g_nudge_x += g_cfg.nudge_step; apply(); break;
-        case 9: {
-            char p[MAX_PATH];
-            exe_dir(p, MAX_PATH);
-            lstrcatA(p, "\\config.html");
-            ShellExecuteA(NULL, "open", p, NULL, NULL, SW_SHOWNORMAL);
-            break;
-        }
+        case 9: toggle_panel(); break;
         }
         return 0;
     case WM_TIMER:
@@ -902,6 +1248,12 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 }
 
 int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
+    g_hi = hi;
+    SetProcessDPIAware();
+    INITCOMMONCONTROLSEX icc;
+    icc.dwSize = sizeof(icc);
+    icc.dwICC = ICC_BAR_CLASSES | ICC_STANDARD_CLASSES;
+    InitCommonControlsEx(&icc);
     exe_dir(g_ini_path, MAX_PATH);
     lstrcatA(g_ini_path, "\\config.ini");
     cfg_load(g_ini_path);

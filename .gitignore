@@ -1,0 +1,6 @@
+*.o
+*.obj
+*.log
+*.bak
+*.ini.bak
+docs/*.psd

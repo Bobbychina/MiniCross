@@ -8,17 +8,36 @@ A 36 KB crosshair overlay for Windows. No runtime, no installer, no Electron.
 
 ## 数字
 
-| | MiniCross | [crosshair-y](https://github.com/YSSF8/crosshair-y) | [CrosshairOverlay](https://github.com/MoChen-5678/CrosshairOverlay) |
+实测，同一个桌面会话（Win11，2560×1600）：
+
+| | MiniCross | crosshair-y (Electron) | CrosshairOverlay (.NET) |
 |---|---|---|---|
 | 下载包 | **36 KB** | 135.65 MB | 47.66 MB |
-| 运行时 | 无 | Electron | .NET Framework |
-| 私有内存 | **1.5 MB** | 见下 | 见下 |
-| 工作集（空闲） | **0.2–0.6 MB** | | |
-| 空闲 CPU | 0 ms / 10 s | | |
+| 进程数 | **1** | **5** | — |
+| 私有内存 | **1.5 MB** | **250 MB** | — |
+| 工作集 | **0.2–0.6 MB** | **449.8 MB** | — |
+| 空闲 CPU | 0 ms / 10 s | — | — |
 
-包体积是 `gh release download` 实测的原始包大小，不是解压后。
+怎么测的：
 
-竞品的内存没有单独采样，但它们用什么运行时决定了量级：Electron 启动就是主进程 + 渲染进程 + GPU 进程三套，一个准星要连带背整个 Chromium；.NET Framework 一加载 CLR 就是 13 MB 起步（我上一版就是这个数，实测）。自己的数字是 `Get-Process` 的 `WorkingSet64` / `PrivateMemorySize64`，30 秒采样，不是峰值。
+- 包体积是 `gh release download` 拿到的原始包，不是解压后。
+- 内存是 `Get-Process` 的 `WorkingSet64` / `PrivateMemorySize64`，启动后等 20 秒测一次，不是峰值。
+- crosshair-y 解压后运行，20 秒时按进程路径筛出 5 个 `crosshair-y.exe` 逐个加总：
+
+```
+  Id     WS          Private
+27580   112.9 MB    76.6 MB
+27672    90.2 MB    32.1 MB
+34976    54.8 MB    13.6 MB
+36812    85.6 MB    22.6 MB
+39588   117.0 MB   105.1 MB
+----------------------------------
+合计    449.8 MB   250.0 MB
+```
+
+- CrosshairOverlay 只发了 Inno Setup 安装包（`MZP` 头），本机没有解包工具，我没装它，所以内存栏空着——不是估计，是不测。
+
+那 5 个进程是 Electron 的常规结构：主进程、渲染进程、GPU 进程、utility 进程。一个准星叠加层，连带背着整个 Chromium。
 
 ## 功能
 
